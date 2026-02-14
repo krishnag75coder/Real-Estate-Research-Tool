@@ -1,19 +1,15 @@
+import os
 from uuid import uuid4
-from dotenv import load_dotenv
 from pathlib import Path
 
 from langchain.chains import RetrievalQAWithSourcesChain
 from langchain_community.document_loaders import UnstructuredURLLoader
-from langchain_text_splitters import RecursiveCharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
 from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
 
-load_dotenv()
-
-# =========================
-# CONFIG
-# =========================
+# ---------------- CONFIG ----------------
 CHUNK_SIZE = 400
 CHUNK_OVERLAP = 80
 EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
@@ -24,37 +20,33 @@ COLLECTION_NAME = "real_estate"
 llm = None
 vector_store = None
 
-
-# =========================
-# INIT COMPONENTS
-# =========================
+# ---------------- INIT COMPONENTS ----------------
 def initialize_components():
     global llm, vector_store
 
     VECTORSTORE_DIR.mkdir(parents=True, exist_ok=True)
 
+    # Initialize LLM
     if llm is None:
         llm = ChatGroq(
-            model="llama-3.3-70b-versatile",
+            model="llama3-70b-8192",  # valid Groq model
             temperature=0.3,
-            max_tokens=500
+            max_tokens=500,
+            groq_api_key=os.getenv("GROQ_API_KEY")  # must be set in Streamlit Secrets
         )
 
+    # Initialize Vector Store
     if vector_store is None:
         embeddings = HuggingFaceEmbeddings(
             model_name=EMBEDDING_MODEL
         )
-
         vector_store = Chroma(
             collection_name=COLLECTION_NAME,
             embedding_function=embeddings,
             persist_directory=str(VECTORSTORE_DIR)
         )
 
-
-# =========================
-# INGEST DATA (FIXED)
-# =========================
+# ---------------- PROCESS URLS ----------------
 def process_urls(urls):
     global vector_store
 
@@ -96,15 +88,12 @@ def process_urls(urls):
 
     yield "Vector database ready ✅"
 
-
-# =========================
-# QUERY
-# =========================
+# ---------------- QUERY ----------------
 def generate_answer(query):
     global vector_store, llm
 
     if vector_store is None or llm is None:
-        raise RuntimeError("Vector DB not initialized")
+        raise RuntimeError("Vector DB not initialized. Please process URLs first.")
 
     retriever = vector_store.as_retriever(search_kwargs={"k": 4})
 
