@@ -5,7 +5,7 @@ We are going to build a user-friendly news research tool designed for effortless
 
 # 🚀 Live App
 
-# 👉 Streamlit App:
+ 👉 Streamlit App:
 🔗 https://real-estate-research-tool-dvd9s7y5fatwexhkyr75tb.streamlit.app/
 ### Features
 
