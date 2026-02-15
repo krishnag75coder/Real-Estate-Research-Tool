@@ -1,108 +1,154 @@
 import os
 from uuid import uuid4
-from pathlib import Path
 from dotenv import load_dotenv
+from pathlib import Path
+
+# LangChain Imports
 from langchain.chains import RetrievalQAWithSourcesChain
-from langchain_community.document_loaders import UnstructuredURLLoader
+from langchain_community.document_loaders import WebBaseLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_groq import ChatGroq
-load_dotenv()
-# ---------------- CONFIG ----------------
-CHUNK_SIZE = 400
-CHUNK_OVERLAP = 80
-EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
+from langchain_huggingface.embeddings import HuggingFaceEmbeddings
 
+# Load environment variables
+load_dotenv()
+
+# ---------------- CONFIG ----------------
+CHUNK_SIZE = 1000
+EMBEDDING_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 VECTORSTORE_DIR = Path(__file__).parent / "resources/vectorstore"
 COLLECTION_NAME = "real_estate"
 
 llm = None
 vector_store = None
 
-# ---------------- INIT COMPONENTS ----------------
+
 def initialize_components():
     global llm, vector_store
 
+    # Create directory if it doesn't exist
     VECTORSTORE_DIR.mkdir(parents=True, exist_ok=True)
 
-    # Initialize LLM
     if llm is None:
         llm = ChatGroq(
-            model="openai/gpt-oss-safeguard-20b",  # valid Groq model
-            temperature=0.3,
-            max_tokens=500,
-            groq_api_key=os.getenv("GROQ_API_KEY")  # must be set in Streamlit Secrets
+            model="llama-3.3-70b-versatile",
+            temperature=0.5,
+            max_tokens=500
+            # groq_api_key is handled by os.environ/load_dotenv
         )
 
-    # Initialize Vector Store
     if vector_store is None:
-        embeddings = HuggingFaceEmbeddings(
-            model_name=EMBEDDING_MODEL
+        ef = HuggingFaceEmbeddings(
+            model_name=EMBEDDING_MODEL,
+            model_kwargs={"trust_remote_code": True}
         )
+
         vector_store = Chroma(
             collection_name=COLLECTION_NAME,
-            embedding_function=embeddings,
+            embedding_function=ef,
             persist_directory=str(VECTORSTORE_DIR)
         )
 
-# ---------------- PROCESS URLS ----------------
+
 def process_urls(urls):
+    """
+    Scrapes data from URLs and stores it in a vector db.
+    """
+    # --- FIX: Declare global to modify the global variable ---
     global vector_store
+    # ---------------------------------------------------------
 
-    yield "Initializing components..."
+    yield "Initializing Components..."
     initialize_components()
 
-    # Delete old collection
+    yield "Resetting vector store...✅"
     try:
-        vector_store.delete_collection()
-        yield "Old database cleared"
-    except:
-        yield "No previous database found"
+        # We try to clear the old collection.
+        # If vector_store is not fully init, this might fail, hence the try/except
+        if vector_store:
+            vector_store.delete_collection()
+            vector_store = None  # Force re-initialization
+            initialize_components()
+    except Exception as e:
+        yield f"⚠️ Note: DB reset skipped ({e})"
+        pass
 
-    # Recreate fresh DB
-    vector_store = None
-    initialize_components()
+    yield "Loading data...✅"
 
-    yield "Loading data from URLs..."
-    loader = UnstructuredURLLoader(urls=urls)
-    documents = loader.load()
-
-    if not documents:
-        yield "No content loaded from URLs"
+    try:
+        # WebBaseLoader is robust and handles User-Agents better than Unstructured
+        loader = WebBaseLoader(urls)
+        data = loader.load()
+    except Exception as e:
+        yield f"❌ Error loading data: {str(e)}"
         return
 
-    yield "Splitting text..."
-    splitter = RecursiveCharacterTextSplitter(
+    if not data:
+        yield "⚠️ Warning: No data loaded."
+        return
+
+    yield f"Loaded {len(data)} documents. Splitting text...✅"
+
+    text_splitter = RecursiveCharacterTextSplitter(
+        separators=["\n\n", "\n", ".", " "],
         chunk_size=CHUNK_SIZE,
-        chunk_overlap=CHUNK_OVERLAP,
-        separators=["\n\n", "\n", ".", " "]
+        chunk_overlap=200
     )
+    docs = text_splitter.split_documents(data)
 
-    docs = splitter.split_documents(documents)
-    yield f"Created {len(docs)} chunks"
+    yield f"Created {len(docs)} chunks. Adding to vector database...✅"
 
-    yield "Adding documents to vector database..."
-    ids = [str(uuid4()) for _ in docs]
-    vector_store.add_documents(docs, ids=ids)
+    if docs:
+        uuids = [str(uuid4()) for _ in range(len(docs))]
+        vector_store.add_documents(docs, ids=uuids)
 
-    yield "Vector database ready ✅"
+    yield "Done! Vector database is ready. ✅"
 
-# ---------------- QUERY ----------------
+
 def generate_answer(query):
-    global vector_store, llm
+    if not vector_store:
+        raise RuntimeError("Vector database is not initialized. Run process_urls first.")
 
-    if vector_store is None or llm is None:
-        raise RuntimeError("Vector DB not initialized. Please process URLs first.")
-
-    retriever = vector_store.as_retriever(search_kwargs={"k": 4})
-
+    # Using 'stuff' chain to feed context to LLM
     chain = RetrievalQAWithSourcesChain.from_chain_type(
         llm=llm,
-        retriever=retriever,
-        chain_type="stuff"
+        chain_type="stuff",
+        retriever=vector_store.as_retriever(search_kwargs={"k": 3})
     )
 
     result = chain.invoke({"question": query})
 
-    return result["answer"], result["sources"]
+    return result['answer'], result['sources']
+
+
+if __name__ == "__main__":
+    # 1. Check for API Key
+    if not os.getenv("GROQ_API_KEY"):
+        print("❌ ERROR: GROQ_API_KEY not found. Please set it in your .env file.")
+        exit(1)
+
+    urls = [
+        "https://www.cnbc.com/2024/12/21/how-the-federal-reserves-rate-policy-affects-mortgages.html",
+        "https://www.cnbc.com/2024/12/20/why-mortgage-rates-jumped-despite-fed-interest-rate-cut.html"
+    ]
+
+    print("--- Starting Processing ---")
+
+    # 2. Iterate generator to execute logic
+    for status in process_urls(urls):
+        print(status)
+
+    print("--- Processing Complete ---")
+
+    # 3. Generate Answer
+    query = "Tell me what was the 30 year fixed mortgage rate along with the date?"
+    try:
+        answer, sources = generate_answer(query)
+        print("\n=================================")
+        print(f"Question: {query}")
+        print(f"Answer: {answer}")
+        print(f"Sources: {sources}")
+        print("=================================")
+    except Exception as e:
+        print(f"An error occurred: {e}")
