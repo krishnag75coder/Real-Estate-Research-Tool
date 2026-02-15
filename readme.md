@@ -2,6 +2,11 @@
 
 We are going to build a user-friendly news research tool designed for effortless information retrieval. Users can input article URLs and ask questions to receive relevant insights from the real-estate domain. (But it's features can be extended to any domain.)
 ![product screenshot](image/Screenshot%202026-02-15%20154530.png)
+
+# 🚀 Live App
+
+# 👉 Streamlit App:
+🔗 https://real-estate-research-tool-dvd9s7y5fatwexhkyr75tb.streamlit.app/
 ### Features
 
 - Load URLs to fetch article content.
