@@ -1,7 +1,7 @@
 # 🏙️ **RealEstate Research Tool**
 
 We are going to build a user-friendly news research tool designed for effortless information retrieval. Users can input article URLs and ask questions to receive relevant insights from the real-estate domain. (But it's features can be extended to any domain.)
-![product screenshot](image/image.png)
+![product screenshot](image/Screenshot%202026-02-15%20154530.png)
 ### Features
 
 - Load URLs to fetch article content.
