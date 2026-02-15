@@ -29,7 +29,7 @@ def initialize_components():
     # Initialize LLM
     if llm is None:
         llm = ChatGroq(
-            model="llama3-70b-8192",  # valid Groq model
+            model="llama3-13b-4096",  # valid Groq model
             temperature=0.3,
             max_tokens=500,
             groq_api_key=os.getenv("GROQ_API_KEY")  # must be set in Streamlit Secrets
